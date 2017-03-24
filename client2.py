@@ -18,6 +18,14 @@ dbconn.execute('''CREATE TABLE IF NOT EXISTS thedata
         (id integer primary key autoincrement, a integer, b integer)''')
 
 class DataReceiver:
+    """Recives data from the producer process.
+    
+    This uses the kernels event loop to call it when there's data ready to read
+    from the pipe, so it can update things without blocking the kernel from
+    handling messages.
+    
+    To make it do things, add functions to self.callbacks .
+    """
     def __init__(self, pipe, loop=None):
         self.pipe = pipe
         self.loop = loop or IOLoop.current()
@@ -32,6 +40,9 @@ class DataReceiver:
             j['id'] = cursor.lastrowid
 
     def read_data(self, fd=None, events=None):
+        """Called when there's data ready to read from self.pipe"""
+        # We might get multiple lines at once, or a read might stop in the
+        # middle of a line. This ensures we handle complete lines:
         self.buffer += self.pipe.read1(1024)
         lines = self.buffer.splitlines(keepends=True)
         if lines[-1].endswith(b'\n'):
@@ -39,6 +50,8 @@ class DataReceiver:
         else:
             self.buffer = lines.pop()
         
+        # Parse JSON from each line, add the data to the database and call
+        # callbacks.
         for line in lines:
             d = json.loads(line.decode('utf-8'))
             self.add_to_db(d)
@@ -46,6 +59,7 @@ class DataReceiver:
                 cb(d)
 
 def plotit(data):
+    """Make a simple line plot of data"""
     ids = [d['id'] for d in data]
     a = [d['a'] for d in data]
     b = [d['b'] for d in data]
@@ -68,6 +82,8 @@ def show_range(from_id, to_id):
     plt.close()
 
 class LivePlotter:
+    """Draw plots of recent data and send them over a comm to the Javascript.
+    """
     def __init__(self):
         # self.comm = comm
         self.format = get_ipython().display_formatter.format
@@ -87,6 +103,9 @@ class LivePlotter:
             traceback.print_exc(file=sys.__stderr__)
 
 def init_notebook():
+    """Starts the data producer, hooks up the machinery to receive and plot
+    data, and sends the Javascript to connect it to the notebook.
+    """
     with (mydir / 'commclient.js').open() as f:
         js_code = f.read()
 
@@ -95,9 +114,12 @@ def init_notebook():
 
     plotter = LivePlotter()
     def comm_opened(comm, msg):
+        # This is called when the frontend opens a comm, a channel for us
+        # to communicate with it.
         plotter.comm = comm
         receiver.callbacks.append(plotter.update)
 
+    # Register the callback above with the kernel's comm machinery
     get_ipython().kernel.comm_manager.register_target('elogexpt', comm_opened)
 
     display(Javascript(js_code))
