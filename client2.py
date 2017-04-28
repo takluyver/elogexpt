@@ -80,6 +80,7 @@ def show_range(from_id, to_id):
     plotit(data)
     plt.show()
     plt.close()
+    return data
 
 class LivePlotter:
     """Draw plots of recent data and send them over a comm to the Javascript.
