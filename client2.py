@@ -96,7 +96,7 @@ class LivePlotter:
             self.recent.append(datum)
             plotit(self.recent)
             data, metadata = self.format(plt.gcf())
-            self.comm.send({'png': encodebytes(data['image/png']),
+            self.comm.send({'png': data['image/png'],
                             'last_id': datum['id']})
             plt.close()
         except Exception as e:
